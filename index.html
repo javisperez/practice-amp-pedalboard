@@ -160,6 +160,23 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
 #toast span{padding:4px 0}
 #toast span:last-child{padding-right:8px}
 @media (prefers-reduced-motion:reduce){.unit,.chev,.sw .lever{transition:none}.dot.wait{animation:none}}
+
+/* parametric EQ: response curve, vertical faders, frequency sliders */
+.eqbay{flex-direction:column;flex-wrap:nowrap;gap:0;padding:10px 6px 4px}
+.eqcurve{display:block;width:100%;height:84px;border-radius:4px;background:#0e0f11;box-shadow:inset 0 1px 4px #000;margin-bottom:8px}
+.vrow{display:flex;justify-content:space-between;padding:0 2px}
+.vcell{display:flex;flex-direction:column;align-items:center;gap:6px;width:60px;flex:none}
+.vf{position:relative;width:52px;height:172px;touch-action:none;cursor:ns-resize;border-radius:8px}
+.vtrack{position:absolute;left:50%;top:15px;bottom:15px;width:8px;margin-left:-4px;border-radius:4px;background:#0c0d0f;box-shadow:inset 0 1px 3px #000,0 1px 0 rgba(255,255,255,.07)}
+.vfill{position:absolute;left:1px;right:1px;border-radius:3px;background:var(--amber);opacity:.8}
+.vzero{position:absolute;left:6px;right:6px;top:50%;height:1px;background:#8b8d94;opacity:.7;pointer-events:none}
+.vthumb{position:absolute;left:3px;right:3px;height:30px;border-radius:5px;border:1px solid #0b0b0c;background:linear-gradient(180deg,#8d9097,#5a5d63 48%,#44464b 52%,#6d7077);box-shadow:0 2px 4px rgba(0,0,0,.6);pointer-events:none}
+.vthumb::after{content:'';position:absolute;left:6px;right:6px;top:50%;height:2px;margin-top:-1px;background:var(--amber);border-radius:1px}
+.vf.held .vthumb{box-shadow:0 1px 2px rgba(0,0,0,.7);filter:brightness(1.12)}
+.eqrows{display:flex;flex-direction:column;margin-top:4px;border-top:1px solid rgba(255,255,255,.07);padding-top:4px}
+.eqrow{gap:8px}
+.eqrow label{width:84px;font-size:13px;letter-spacing:.12em}
+.eqrow .fval{width:40px}
 </style>
 </head>
 <body>
@@ -869,6 +886,108 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
   const quant = (p, v) => { const s = stepOf(p); return Number((Math.round(v / s) * s).toFixed(2)); };
   const labelUp = (s) => esc(String(s).toUpperCase());
 
+
+  // ---------- parametric EQ: vertical faders + a live response curve ----------
+  // A presentation rule only: the amp still reports 13 ordinary knobs (PROTOCOL.md). When a unit "eq" carries
+  // exactly the controls below, the page lays them out as faders; any other firmware gets the plain knobs.
+  const EQ_BANDS = [['lg', 'LOW'], ['g1', 'LO-MID'], ['g2', 'HI-MID'], ['hg', 'HIGH'], ['lv', 'LEVEL']];
+  const EQ_ROWS = [['lc', 'LOW CUT', 1], ['lf', 'LOW HZ', 1], ['f1', 'LO-MID HZ', 1], ['q1', 'LO-MID Q', 0],
+                   ['f2', 'HI-MID HZ', 1], ['q2', 'HI-MID Q', 0], ['hf', 'HIGH HZ', 1], ['hc', 'HIGH CUT', 1]];
+  const isEq = (u) => u.id === 'eq' && EQ_BANDS.concat(EQ_ROWS).every((b) => u.params.some((p) => p.key === 'eq.' + b[0] && p.kind === 'k'));
+  const eqParam = (k) => model.param('eq.' + k);
+  const eqVal = (k) => { const p = eqParam(k); const v = model.values['eq.' + k]; return v === undefined ? (p ? p.def : 0) : v; };
+  const hzText = (v) => (v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(Math.round(v)));
+  const dbText = (v) => { const r = Math.round(v * 10) / 10; return Math.abs(r) < 0.1 ? '0' : (r > 0 ? '+' : '−') + Math.abs(r); };
+  // text for any control; the EQ gets real units, everything else is the model's own text
+  function disp(p) {
+    const v = model.values[p.key];
+    if (v === undefined || !p.key.startsWith('eq.')) return model.display(p);
+    const id = p.key.slice(3);
+    if (id === 'lc') return v < 21 ? 'OFF' : hzText(v);
+    if (id === 'hc') return v > 11800 ? 'OFF' : hzText(v);
+    if (id === 'lf' || id === 'f1' || id === 'f2' || id === 'hf') return hzText(v);
+    if (id === 'q1' || id === 'q2') return v.toFixed(1);
+    return dbText(v);
+  }
+  // Hz controls are heard in octaves, so their sliders are logarithmic.
+  const hzToPos = (p, v) => Math.round(1000 * Math.log(Math.max(v, p.min) / p.min) / Math.log(p.max / p.min));
+  const posToHz = (p, x) => Math.round(p.min * Math.pow(p.max / p.min, x / 1000));
+  function summaryOf(u) {
+    if (!isEq(u)) return model.summary(u);
+    const parts = [['lg', 'LO'], ['g1', 'LM'], ['g2', 'HM'], ['hg', 'HI']].filter((b) => Math.abs(eqVal(b[0])) >= 0.1).map((b) => b[1] + ' ' + dbText(eqVal(b[0])));
+    return parts.length ? parts.join(' · ') : 'FLAT';
+  }
+  // Response of the six filter stages, the same maths the amp uses (RBJ biquads), summed in dB.
+  function eqResponse(f) {
+    const w = 2 * Math.PI * f / 44100;
+    const mag = (b0, b1, b2, a0, a1, a2) => {
+      const c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+      const nr = b0 + b1 * c1 + b2 * c2, ni = -(b1 * s1 + b2 * s2);
+      const dr = a0 + a1 * c1 + a2 * c2, di = -(a1 * s1 + a2 * s2);
+      return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+    };
+    const stage = (type, hz, db, q) => {
+      const w0 = 2 * Math.PI * hz / 44100, c = Math.cos(w0), s = Math.sin(w0), A = Math.pow(10, db / 40);
+      if (type === 'hp') { const a = s / (2 * q); return mag((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + a, -2 * c, 1 - a); }
+      if (type === 'lp') { const a = s / (2 * q); return mag((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + a, -2 * c, 1 - a); }
+      if (type === 'pk') { const a = s / (2 * q); return mag(1 + a * A, -2 * c, 1 - a * A, 1 + a / A, -2 * c, 1 - a / A); }
+      const a = s / 2 * Math.SQRT2, t = 2 * Math.sqrt(A) * a;
+      if (type === 'ls') return mag(A * ((A + 1) - (A - 1) * c + t), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - t), (A + 1) + (A - 1) * c + t, -2 * ((A - 1) + (A + 1) * c), (A + 1) + (A - 1) * c - t);
+      return mag(A * ((A + 1) + (A - 1) * c + t), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - t), (A + 1) - (A - 1) * c + t, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - t);
+    };
+    let db = eqVal('lv');
+    if (eqVal('lc') >= 21) db += stage('hp', eqVal('lc'), 0, 0.707);
+    if (Math.abs(eqVal('lg')) >= 0.1) db += stage('ls', eqVal('lf'), eqVal('lg'), 1);
+    if (Math.abs(eqVal('g1')) >= 0.1) db += stage('pk', eqVal('f1'), eqVal('g1'), eqVal('q1'));
+    if (Math.abs(eqVal('g2')) >= 0.1) db += stage('pk', eqVal('f2'), eqVal('g2'), eqVal('q2'));
+    if (Math.abs(eqVal('hg')) >= 0.1) db += stage('hs', eqVal('hf'), eqVal('hg'), 1);
+    if (eqVal('hc') <= 11800) db += stage('lp', eqVal('hc'), 0, 0.707);
+    return db;
+  }
+  const CW = 320, CH = 84, CRANGE = 18;
+  function eqCurvePath() {
+    let d = '';
+    for (let i = 0; i <= 96; i++) {
+      const f = 20 * Math.pow(1000, i / 96);
+      const y = CH / 2 - P.clamp(eqResponse(f), -CRANGE, CRANGE) * (CH / 2) / CRANGE;
+      d += (i ? 'L' : 'M') + (i * CW / 96).toFixed(1) + ' ' + y.toFixed(1);
+    }
+    return d;
+  }
+  const fx = (f) => (CW * Math.log(f / 20) / Math.log(1000)).toFixed(1);
+  function eqCurveHTML() {
+    const grid = [[0, 0], [12, 1], [-12, 1]].map((g) => `<line x1="0" x2="${CW}" y1="${CH / 2 - g[0] * CH / 2 / CRANGE}" y2="${CH / 2 - g[0] * CH / 2 / CRANGE}" stroke="${g[1] ? '#2a2c31' : '#4a4d54'}" stroke-width="1"${g[1] ? ' stroke-dasharray="3 4"' : ''}/>`).join('');
+    const ticks = [[100, '100'], [1000, '1k'], [10000, '10k']].map((t) => `<line x1="${fx(t[0])}" x2="${fx(t[0])}" y1="0" y2="${CH}" stroke="#2a2c31" stroke-width="1"/><text x="${+fx(t[0]) + 3}" y="${CH - 3}" fill="#6d7078" font-size="9" font-family="IBM Plex Mono,monospace">${t[1]}</text>`).join('');
+    return `<svg class="eqcurve" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none" role="img" aria-label="EQ response curve">${grid}${ticks}<path class="eqline" d="${eqCurvePath()}" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  function drawEq() { const l = $('.eqline'); if (l) l.setAttribute('d', eqCurvePath()); }
+  const VTHUMB = 30;
+  // The amp holds a knob in 200 steps, so a dB fader moves on the amp's own grid (0.15 dB for +-15): what the page sends is exactly what comes back.
+  const vfStep = (p) => (p.max - p.min) / 200;
+  const quantV = (p, v) => Number((Math.round(v / vfStep(p)) * vfStep(p)).toFixed(3));
+  const vfFrac = (p, v) => P.clamp(((v === undefined ? p.def : v) - p.min) / (p.max - p.min), 0, 1);
+  function vfApply(el, p, v) {
+    const f = vfFrac(p, v), f0 = vfFrac(p, 0);
+    $('.vthumb', el).style.bottom = `calc((100% - ${VTHUMB}px) * ${f})`;
+    const fill = $('.vfill', el);
+    fill.style.bottom = (Math.min(f, f0) * 100) + '%';
+    fill.style.height = (Math.abs(f - f0) * 100) + '%';
+    el.setAttribute('aria-valuenow', v);
+    el.setAttribute('aria-valuetext', disp(p) + ' dB');
+  }
+  function eqFader(k, label) {
+    const p = eqParam(k), v = model.values[p.key], f = vfFrac(p, v), f0 = vfFrac(p, 0);
+    return `<div class="vcell" data-key="${attr(p.key)}"><span class="lcd">${esc(disp(p))}</span><div class="vf" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${attr(label + ' gain, dB')}" aria-valuemin="${p.min}" aria-valuemax="${p.max}" aria-valuenow="${v === undefined ? p.def : v}" aria-valuetext="${attr(disp(p) + ' dB')}"><span class="vtrack"><span class="vfill" style="bottom:${Math.min(f, f0) * 100}%;height:${Math.abs(f - f0) * 100}%"></span></span><span class="vzero"></span><span class="vthumb" style="bottom:calc((100% - ${VTHUMB}px) * ${f})"></span></div><span class="lab">${label}</span></div>`;
+  }
+  function eqRow(k, label, isHz) {
+    const p = eqParam(k), v = model.values[p.key], val = v === undefined ? p.def : v, id = 'f-' + p.key.replace(/\W/g, '-');
+    const rng = isHz ? `min="0" max="1000" step="1" value="${hzToPos(p, val)}" data-log="1"` : `min="${p.min}" max="${p.max}" step="${stepOf(p)}" value="${val}"`;
+    return `<div class="frow eqrow" data-key="${attr(p.key)}"><label for="${id}">${label}</label><input id="${id}" class="fader" type="range" ${rng} data-act="fader"><span class="fval">${esc(disp(p))}</span></div>`;
+  }
+  function eqBayHTML() {
+    return `<div class="bay eqbay">${eqCurveHTML()}<div class="vrow">${EQ_BANDS.map((b) => eqFader(b[0], b[1])).join('')}</div><div class="eqrows">${EQ_ROWS.map((r) => eqRow(r[0], r[1], r[2])).join('')}</div></div>`;
+  }
+
   // ---------- markup ----------
   function knobCell(p) {
     const v = model.values[p.key];
@@ -893,6 +1012,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     return `<div class="frow" data-key="${attr(p.key)}"><label for="${id}">${esc(p.label)}</label><input id="${id}" class="fader" type="range" min="${p.min}" max="${p.max}" step="${stepOf(p)}" value="${v === undefined ? p.min : v}" data-act="fader"><span class="fval">${esc(model.display(p))}</span></div>`;
   }
   function bayHTML(u) {
+    if (isEq(u)) return eqBayHTML();
     const cells = u.params.map((p) => (p.kind === 'k' ? knobCell(p) : p.kind === 's' ? switchCell(p) : p.kind === 'b' ? buttonCell(p) : '')).join('');
     const sel = u.params.map((p) => (p.kind === 'e' ? enumGroup(p) : p.kind === 'f' ? faderRow(p) : '')).join('');
     return `<div class="bay">${cells}${sel ? `<div class="sel">${sel}</div>` : ''}</div>`;
@@ -903,7 +1023,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     const pc = plate(u.id);
     const can = model.canReorder;
     const gripLabel = `Reorder ${u.name}, position ${i + 1} of ${n}.` + (can ? ' Use the up and down arrow keys.' : ' Not available with this firmware.');
-    return `<section class="unit col" data-uid="${attr(u.id)}" style="--plate:${pc[0]};--plate-fg:${pc[1]}">${SCREWS}<div class="head"><button class="grip" data-act="grip" aria-label="${attr(gripLabel)}"${can ? '' : ' aria-disabled="true"'}>${GRIP}</button><button class="name" data-act="toggleOpen" aria-expanded="${open}" aria-label="${attr(u.name)} controls"><span class="stack"><span class="plate${on ? '' : ' off'}">${labelUp(u.name)}</span><span class="read" data-read>${esc(model.summary(u))}</span></span><span class="chev${open ? ' up' : ''}">${CHEV}</span></button><span class="led${on ? ' on' : ''}"></span><button class="byp${on ? ' on' : ''}" data-act="active" aria-pressed="${on}" aria-label="${attr(u.name)}">${on ? 'ON' : 'BYPASS'}</button></div>${open ? bayHTML(u) + (model.canEdit ? `<div class="bayfoot"><button class="rmbtn" data-act="remove" aria-label="Remove ${attr(u.name)} from the rack">REMOVE FROM RACK</button></div>` : '') : ''}</section>`;
+    return `<section class="unit col" data-uid="${attr(u.id)}" style="--plate:${pc[0]};--plate-fg:${pc[1]}">${SCREWS}<div class="head"><button class="grip" data-act="grip" aria-label="${attr(gripLabel)}"${can ? '' : ' aria-disabled="true"'}>${GRIP}</button><button class="name" data-act="toggleOpen" aria-expanded="${open}" aria-label="${attr(u.name)} controls"><span class="stack"><span class="plate${on ? '' : ' off'}">${labelUp(u.name)}</span><span class="read" data-read>${esc(summaryOf(u))}</span></span><span class="chev${open ? ' up' : ''}">${CHEV}</span></button><span class="led${on ? ' on' : ''}"></span><button class="byp${on ? ' on' : ''}" data-act="active" aria-pressed="${on}" aria-label="${attr(u.name)}">${on ? 'ON' : 'BYPASS'}</button></div>${open ? bayHTML(u) + (model.canEdit ? `<div class="bayfoot"><button class="rmbtn" data-act="remove" aria-label="Remove ${attr(u.name)} from the rack">REMOVE FROM RACK</button></div>` : '') : ''}</section>`;
   }
   function statusInfo() {
     if (ui.mode === 'demo') return { text: ui.status === 'connected' ? 'DEMO AMP' : 'Demo…', cls: ui.status === 'connected' ? 'ok' : 'wait' };
@@ -946,8 +1066,11 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     $$(`[data-key="${key}"]`).forEach((cell) => {
       if (p.kind === 'k') {
         const rot = $('.rot', cell); if (rot) rot.style.transform = `rotate(${angle(p, v)}deg)`;
-        const l = $('.lcd', cell); if (l) l.textContent = model.display(p);
+        const l = $('.lcd', cell); if (l) l.textContent = disp(p);
         const k = $('.knob', cell); if (k) { k.setAttribute('aria-valuenow', v); k.setAttribute('aria-valuetext', model.display(p)); }
+        const vf = $('.vf', cell); if (vf) vfApply(vf, p, v);
+        const inp = $('input.fader', cell);
+        if (inp) { if (document.activeElement !== inp) inp.value = inp.dataset.log ? hzToPos(p, v) : v; const fv = $('.fval', cell); if (fv) fv.textContent = disp(p); }
       } else if (p.kind === 'f') {
         const inp = $('input', cell); if (inp && document.activeElement !== inp) inp.value = v;
         const l = $('.fval', cell); if (l) l.textContent = model.display(p);
@@ -960,10 +1083,11 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
         const b = $('.tapbtn', cell); if (b) { b.classList.add('press'); setTimeout(() => b.classList.remove('press'), 120); }
       }
     });
+    if (key.startsWith('eq.')) drawEq();
     const uid = key.split('.')[0];
     const u = model.units.get(uid);
     const section = $(`.unit[data-uid="${uid}"]`);
-    if (section && u) { const r = $('[data-read]', section); if (r) r.textContent = model.summary(u); }
+    if (section && u) { const r = $('[data-read]', section); if (r) r.textContent = summaryOf(u); }
   }
   function updateActive(uid) {
     const section = $(`.unit[data-uid="${uid}"]`);
@@ -973,7 +1097,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     $('.led', section).classList.toggle('on', on);
     const byp = $('.byp', section); byp.classList.toggle('on', on); byp.setAttribute('aria-pressed', String(on)); byp.textContent = on ? 'ON' : 'BYPASS';
     $('.plate', section).classList.toggle('off', !on);
-    if (u) $('[data-read]', section).textContent = model.summary(u);
+    if (u) $('[data-read]', section).textContent = summaryOf(u);
   }
 
   // The sound has been changed by the user since the preset was loaded or saved.
@@ -1363,10 +1487,44 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     el.addEventListener('pointercancel', up);
   }
 
+  // ---------- vertical faders (EQ) ----------
+  // Relative drag, like the knobs: it never jumps to the finger. Double tap = default.
+  function startVFader(e, el) {
+    e.preventDefault();
+    const key = el.closest('[data-key]').dataset.key;
+    const p = model.param(key);
+    if (!p) return;
+    const now = performance.now();
+    if (el._tap && now - el._tap < 320 && Number.isFinite(p.def)) { el._tap = 0; setValue(key, p.def, true); return; }
+    el._tap = now;
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    const travel = Math.max(1, el.getBoundingClientRect().height - VTHUMB);
+    const y0 = e.clientY, v0 = model.values[key] === undefined ? p.min : model.values[key], range = p.max - p.min;
+    ui.activeKey = key;
+    el.classList.add('held');
+    const move = (ev) => {
+      const v = quantV(p, P.clamp(v0 + ((y0 - ev.clientY) / travel) * range, p.min, p.max));
+      if (v !== model.values[key]) setValue(key, v, false);
+    };
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      el.classList.remove('held');
+      ui.activeKey = null;
+      flushSet(key);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  }
+
   // ---------- events ----------
   document.addEventListener('pointerdown', (e) => {
     const knob = e.target.closest('.knob');
     if (knob) { startKnob(e, knob); return; }
+    const vf = e.target.closest('.vf');
+    if (vf) { startVFader(e, vf); return; }
     const tap = e.target.closest('.tapbtn');
     if (tap) {
       const key = tap.closest('[data-key]').dataset.key;
@@ -1467,9 +1625,11 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     if (!p) return;
     ui.activeKey = key;
     touchKey(key);
-    model.values[key] = Number(f.value);
-    const l = $('.fval', f.closest('[data-key]')); if (l) l.textContent = model.display(p);
-    sendSet(key, Number(f.value));
+    const val = f.dataset.log ? posToHz(p, Number(f.value)) : Number(f.value);
+    model.values[key] = val;
+    const l = $('.fval', f.closest('[data-key]')); if (l) l.textContent = disp(p);
+    if (key.startsWith('eq.')) { drawEq(); const u = model.units.get('eq'), sec = $('.unit[data-uid="eq"] [data-read]'); if (u && sec) sec.textContent = summaryOf(u); }
+    sendSet(key, val);
   });
   document.addEventListener('change', (e) => {
     if (e.target.id === 'pname') {
@@ -1490,13 +1650,14 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && ui.sheet) { e.preventDefault(); closeSheet(); return; }
     if (e.key === 'Enter' && e.target.id === 'pname') { e.preventDefault(); e.target.blur(); return; }
-    const knob = e.target.closest && e.target.closest('.knob');
+    const knob = e.target.closest && e.target.closest('.knob, .vf');
     if (knob) {
       const key = knob.closest('[data-key]').dataset.key;
       const p = model.param(key);
       if (!p) return;
       const cur = model.values[key] === undefined ? p.min : model.values[key];
-      const s = stepOf(p);
+      const isV = knob.classList.contains('vf');
+      const s = isV ? vfStep(p) * Math.max(1, Math.round(1 / vfStep(p))) : stepOf(p);   // faders: about 1 dB per press
       let v = null;
       if (e.key === 'ArrowUp' || e.key === 'ArrowRight') v = cur + s;
       else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') v = cur - s;
@@ -1504,7 +1665,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
       else if (e.key === 'PageDown') v = cur - s * 10;
       else if (e.key === 'Home') v = p.min;
       else if (e.key === 'End') v = p.max;
-      if (v !== null) { e.preventDefault(); setValue(key, quant(p, P.clamp(v, p.min, p.max)), false); flushSet(key); }
+      if (v !== null) { e.preventDefault(); setValue(key, (isV ? quantV : quant)(p, P.clamp(v, p.min, p.max)), false); flushSet(key); }
       return;
     }
     const grip = e.target.closest && e.target.closest('.grip');
