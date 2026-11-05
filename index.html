@@ -442,17 +442,31 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
 
   const REGISTRY = [
     { id: 'gt', name: 'Gate', flags: '', params: [knob('th', 'Thresh', 0, 10, 3)] },
-    { id: 'dr', name: 'Drive', flags: '', params: [knob('gn', 'Gain', 0, 10, 6.5), knob('tn', 'Tone', 0, 10, 5), knob('lv', 'Level', 0, 10, 4), knob('bd', 'Body', 0, 10, 7)] },
+    { id: 'dr', name: 'Drive', flags: '', params: [knob('gn', 'Gain', 0, 10, 6.5), knob('tn', 'Tone', 0, 10, 5), knob('lv', 'Level', 0, 10, 4), knob('bd', 'Body', 0, 10, 4)] },
     { id: 'am', name: 'Amp + Cab', flags: '', params: [knob('bs', 'Bass', 0, 10, 4.5), knob('md', 'Mid', 0, 10, 5.5), knob('tr', 'Treble', 0, 10, 6), en('vc', 'Voicing', ['Clean', 'Crunch', 'Lead'], 1), en('cb', 'Cabinet', ['1x12', '2x12', '4x12'], 0)] },
     { id: 'dl', name: 'Delay', flags: '', params: [knob('tm', 'Time', 0, 10, 3.8), knob('mx', 'Mix', 0, 10, 2.4), btn('tp', 'Tap'), sw('dk', 'Dark', 0)] },
     { id: 'rv', name: 'Reverb', flags: '', params: [knob('dc', 'Decay', 0, 10, 4.2), knob('mx', 'Mix', 0, 10, 1.8)] },
     { id: 'cp', name: 'Compressor', flags: '', params: [knob('sn', 'Sustain', 0, 10, 5), knob('lv', 'Level', 0, 10, 5), en('at', 'Attack', ['Fast', 'Slow'], 0)] },
     { id: 'ch', name: 'Chorus', flags: '', params: [knob('rt', 'Rate', 0, 10, 3), knob('dp', 'Depth', 0, 10, 5), knob('mx', 'Mix', 0, 10, 4), sw('wd', 'Wide', 0)] },
     { id: 'tm', name: 'Tremolo', flags: '', params: [knob('rt', 'Rate', 0, 10, 4), knob('dp', 'Depth', 0, 10, 6), en('wv', 'Wave', ['Sine', 'Square', 'Saw'], 0)] },
+    { id: 'eq', name: 'Parametric EQ', flags: '', params: [
+      knob('lc', 'Low Cut', 20, 400, 20), knob('lf', 'Low Hz', 40, 400, 120), knob('lg', 'Low dB', -15, 15, 0),
+      knob('f1', 'LoMid Hz', 100, 1500, 400), knob('g1', 'LoMid dB', -15, 15, 0), knob('q1', 'LoMid Q', 0.3, 5, 1),
+      knob('f2', 'HiMid Hz', 500, 5000, 1600), knob('g2', 'HiMid dB', -15, 15, 0), knob('q2', 'HiMid Q', 0.3, 5, 1),
+      knob('hf', 'High Hz', 2000, 10000, 4000), knob('hg', 'High dB', -15, 15, 0),
+      knob('hc', 'High Cut', 2000, 12000, 12000), knob('lv', 'Level', -12, 12, 0)] },
     { id: 'ou', name: 'Output', flags: 'f', params: [fader('ig', 'Guitar', 0, 100, 50), fader('bk', 'Backing', 0, 100, 65), fader('ms', 'Master', 0, 100, 80)] }
   ];
 
   const round3 = (v) => Number(Number(v).toFixed(3));
+  // The amp stores every knob and fader as ONE step number (knob: 200 steps across its range, fader: one per
+  // unit), so any value it is given comes back snapped to a step. The simulated amp does the same.
+  const quant = (p, v) => {
+    if (p.kind !== 'k' && p.kind !== 'f') return v;
+    const steps = p.kind === 'k' ? 200 : p.max - p.min;
+    const c = Math.min(p.max, Math.max(p.min, v));
+    return round3(p.min + Math.floor((c - p.min) / (p.max - p.min) * steps + 0.5) * (p.max - p.min) / steps);
+  };
   const SLOTS = 16;
   const copy = (o) => JSON.parse(JSON.stringify(o));
 
@@ -468,11 +482,15 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
       this.active.rv = false;
       // Without rack editing every pedal is always in the rack.
       this.order = this.canEdit ? ['gt', 'dr', 'am', 'dl', 'rv'] : this.pedalIds();
-      for (const u of this.registry) for (const p of u.params) if (p.kind !== 'b') this.values[u.id + '.' + p.id] = p.def;
+      for (const u of this.registry) for (const p of u.params) if (p.kind !== 'b') this.values[u.id + '.' + p.id] = quant(p, p.def);
 
-      // Four presets: snapshots of everything except the Output unit (master/backing are global).
+      // Five presets: snapshots of everything except the Output unit (master/backing are global).
       const base = this.snapshot();
-      const make = (mut) => { const s = copy(base); mut(s); return s; };
+      const make = (mut) => {
+        const s = copy(base); mut(s);
+        for (const k of Object.keys(s.values)) s.values[k] = quant(this.findParam(k), s.values[k]);
+        return s;
+      };
       this.names = new Array(SLOTS).fill('');
       this.slots = new Array(SLOTS).fill(null);
       const demo = [
@@ -480,8 +498,15 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
         // first test through the amp is easy to judge.
         ['Clean Tone', make((s) => { s.values['am.vc'] = 0; s.active.dr = false; s.active.dl = false; s.active.rv = false; })],
         ['Crunch', make((s) => { s.values['dr.gn'] = 7.5; s.values['am.vc'] = 1; s.active.dl = false; s.active.rv = false; })],
-        ['Lead', make((s) => { s.values['dr.gn'] = 8.5; s.values['dr.bd'] = 6; s.values['am.vc'] = 2; s.values['dl.mx'] = 3.5; s.active.dl = true; s.active.rv = true; s.order = ['gt', 'am', 'dr', 'dl', 'rv']; })],
-        ['Ambient', make((s) => { s.active.dr = false; s.values['am.vc'] = 0; s.values['dl.mx'] = 5; s.values['rv.dc'] = 7; s.values['rv.mx'] = 5; s.active.dl = true; s.active.rv = true; s.order = ['gt', 'am', 'ch', 'dl', 'rv']; })]
+        ['Lead', make((s) => { s.values['dr.gn'] = 8.5; s.values['dr.bd'] = 3; s.values['am.vc'] = 2; s.values['dl.mx'] = 3.5; s.active.dl = true; s.active.rv = true; s.order = ['gt', 'am', 'dr', 'dl', 'rv']; })],
+        ['Ambient', make((s) => { s.active.dr = false; s.values['am.vc'] = 0; s.values['dl.mx'] = 5; s.values['rv.dc'] = 7; s.values['rv.mx'] = 5; s.active.dl = true; s.active.rv = true; s.order = ['gt', 'am', 'ch', 'dl', 'rv']; })],
+        // A starting point for a Dimebag-style sound: the EQ sits in front of the amp, tight lows, a push at 800 Hz.
+        ['Pantera', make((s) => {
+          s.active.rv = false; s.order = ['gt', 'eq', 'am']; Object.assign(s.values, {
+            'gt.th': 6, 'eq.lc': 90, 'eq.lf': 120, 'eq.lg': -3, 'eq.f1': 300, 'eq.g1': -3, 'eq.q1': 1,
+            'eq.f2': 800, 'eq.g2': 6, 'eq.q2': 1.2, 'eq.hf': 4000, 'eq.hg': 2, 'eq.hc': 12000, 'eq.lv': -3,
+            'am.vc': 2, 'am.cb': 2, 'am.bs': 4, 'am.md': 6, 'am.tr': 6 });
+        })]
       ];
       demo.forEach(([name, snap], i) => { this.names[i] = name; this.slots[i] = snap; });
       this.restore(1);
@@ -503,7 +528,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
       for (const u of this.registry) {
         if (this.isFixed(u)) continue;
         this.active[u.id] = true;
-        for (const p of u.params) if (p.kind !== 'b') this.values[u.id + '.' + p.id] = p.def;
+        for (const p of u.params) if (p.kind !== 'b') this.values[u.id + '.' + p.id] = quant(p, p.def);
       }
       this.order = this.canEdit ? [] : this.pedalIds();
     }
@@ -573,7 +598,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
             v = Math.round(raw);
             if (v < 0 || v >= p.options.length) return ['E,S,range'];
           } else if (p.kind === 's') v = raw ? 1 : 0;
-          else v = round3(P.clamp(raw, p.min, p.max));
+          else v = quant(p, raw);
           this.values[f[0]] = v;
           return ['S,' + f[0] + ',' + v];
         }
@@ -826,7 +851,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
   const PLATES = {
     gt: ['#9fb4c9', '#10161d'], dr: ['#f08a3c', '#1b1108'], am: ['#e6dcc0', '#1c1b17'],
     dl: ['#3fb5ae', '#06201f'], rv: ['#918ee8', '#12112b'],
-    cp: ['#d9c96a', '#211c06'], ch: ['#5aa9f0', '#071a30'], tm: ['#e0708a', '#2a0c14']
+    cp: ['#d9c96a', '#211c06'], ch: ['#5aa9f0', '#071a30'], tm: ['#e0708a', '#2a0c14'], eq: ['#9ccf6e', '#0e1d07']
   };
   const FALLBACK = [['#d9a066', '#1d1208'], ['#7fc4a0', '#08201a'], ['#c58ad6', '#1f0f26'], ['#8fb86a', '#122008'], ['#d6727f', '#2a0c10']];
   const hash = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
