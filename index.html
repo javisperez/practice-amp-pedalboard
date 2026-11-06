@@ -161,12 +161,12 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
 #toast span:last-child{padding-right:8px}
 @media (prefers-reduced-motion:reduce){.unit,.chev,.sw .lever{transition:none}.dot.wait{animation:none}}
 
-/* parametric EQ: response curve, vertical faders, frequency sliders */
+/* 6-band EQ: response curve and seven vertical faders */
 .eqbay{flex-direction:column;flex-wrap:nowrap;gap:0;padding:10px 6px 4px}
 .eqcurve{display:block;width:100%;height:84px;border-radius:4px;background:#0e0f11;box-shadow:inset 0 1px 4px #000;margin-bottom:8px}
 .vrow{display:flex;justify-content:space-between;padding:0 2px}
-.vcell{display:flex;flex-direction:column;align-items:center;gap:6px;width:60px;flex:none}
-.vf{position:relative;width:52px;height:172px;touch-action:none;cursor:ns-resize;border-radius:8px}
+.vcell{display:flex;flex-direction:column;align-items:center;gap:6px;width:46px;flex:none}
+.vf{position:relative;width:44px;height:172px;touch-action:none;cursor:ns-resize;border-radius:8px}
 .vtrack{position:absolute;left:50%;top:15px;bottom:15px;width:8px;margin-left:-4px;border-radius:4px;background:#0c0d0f;box-shadow:inset 0 1px 3px #000,0 1px 0 rgba(255,255,255,.07)}
 .vfill{position:absolute;left:1px;right:1px;border-radius:3px;background:var(--amber);opacity:.8}
 .vzero{position:absolute;left:6px;right:6px;top:50%;height:1px;background:#8b8d94;opacity:.7;pointer-events:none}
@@ -460,18 +460,16 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
   const REGISTRY = [
     { id: 'gt', name: 'Gate', flags: '', params: [knob('th', 'Thresh', 0, 10, 3)] },
     { id: 'dr', name: 'Drive', flags: '', params: [knob('gn', 'Gain', 0, 10, 6.5), knob('tn', 'Tone', 0, 10, 5), knob('lv', 'Level', 0, 10, 4), knob('bd', 'Body', 0, 10, 4)] },
-    { id: 'am', name: 'Amp + Cab', flags: '', params: [knob('bs', 'Bass', 0, 10, 4.5), knob('md', 'Mid', 0, 10, 5.5), knob('tr', 'Treble', 0, 10, 6), en('vc', 'Voicing', ['Clean', 'Crunch', 'Lead'], 1), en('cb', 'Cabinet', ['1x12', '2x12', '4x12'], 0)] },
+    { id: 'am', name: 'Amp + Cab', flags: '', params: [knob('gn', 'Gain', 0, 10, 5), knob('bs', 'Bass', 0, 10, 4.5), knob('md', 'Mid', 0, 10, 5.5), knob('tr', 'Treble', 0, 10, 6), en('vc', 'Voicing', ['Clean', 'Crunch', 'Lead'], 1), en('cb', 'Cabinet', ['1x12', '2x12', '4x12'], 0)] },
     { id: 'dl', name: 'Delay', flags: '', params: [knob('tm', 'Time', 0, 10, 3.8), knob('mx', 'Mix', 0, 10, 2.4), btn('tp', 'Tap'), sw('dk', 'Dark', 0)] },
     { id: 'rv', name: 'Reverb', flags: '', params: [knob('dc', 'Decay', 0, 10, 4.2), knob('mx', 'Mix', 0, 10, 1.8)] },
     { id: 'cp', name: 'Compressor', flags: '', params: [knob('sn', 'Sustain', 0, 10, 5), knob('lv', 'Level', 0, 10, 5), en('at', 'Attack', ['Fast', 'Slow'], 0)] },
     { id: 'ch', name: 'Chorus', flags: '', params: [knob('rt', 'Rate', 0, 10, 3), knob('dp', 'Depth', 0, 10, 5), knob('mx', 'Mix', 0, 10, 4), sw('wd', 'Wide', 0)] },
     { id: 'tm', name: 'Tremolo', flags: '', params: [knob('rt', 'Rate', 0, 10, 4), knob('dp', 'Depth', 0, 10, 6), en('wv', 'Wave', ['Sine', 'Square', 'Saw'], 0)] },
-    { id: 'eq', name: 'Parametric EQ', flags: '', params: [
-      knob('lc', 'Low Cut', 20, 400, 20), knob('lf', 'Low Hz', 40, 400, 120), knob('lg', 'Low dB', -15, 15, 0),
-      knob('f1', 'LoMid Hz', 100, 1500, 400), knob('g1', 'LoMid dB', -15, 15, 0), knob('q1', 'LoMid Q', 0.3, 5, 1),
-      knob('f2', 'HiMid Hz', 500, 5000, 1600), knob('g2', 'HiMid dB', -15, 15, 0), knob('q2', 'HiMid Q', 0.3, 5, 1),
-      knob('hf', 'High Hz', 2000, 10000, 4000), knob('hg', 'High dB', -15, 15, 0),
-      knob('hc', 'High Cut', 2000, 12000, 12000), knob('lv', 'Level', -12, 12, 0)] },
+    { id: 'eq', name: '6-Band EQ', flags: '', params: [
+      fader('b1', '100', -18, 18, 0), fader('b2', '200', -18, 18, 0), fader('b3', '400', -18, 18, 0),
+      fader('b4', '800', -18, 18, 0), fader('b5', '1.6k', -18, 18, 0), fader('b6', '3.2k', -18, 18, 0),
+      fader('lv', 'Level', -12, 12, 0)] },
     { id: 'ou', name: 'Output', flags: 'f', params: [fader('ig', 'Guitar', 0, 100, 50), fader('bk', 'Backing', 0, 100, 65), fader('ms', 'Master', 0, 100, 80)] }
   ];
 
@@ -514,14 +512,13 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
         // Preset 1 is the first sound after power-up: dry and clean (no drive, no delay, no reverb) so a
         // first test through the amp is easy to judge.
         ['Clean Tone', make((s) => { s.values['am.vc'] = 0; s.active.dr = false; s.active.dl = false; s.active.rv = false; })],
-        ['Crunch', make((s) => { s.values['dr.gn'] = 7.5; s.values['am.vc'] = 1; s.active.dl = false; s.active.rv = false; })],
-        ['Lead', make((s) => { s.values['dr.gn'] = 8.5; s.values['dr.bd'] = 3; s.values['am.vc'] = 2; s.values['dl.mx'] = 3.5; s.active.dl = true; s.active.rv = true; s.order = ['gt', 'am', 'dr', 'dl', 'rv']; })],
+        ['Crunch', make((s) => { s.values['dr.gn'] = 5; s.values['am.vc'] = 1; s.active.dl = false; s.active.rv = false; })],
+        ['Lead', make((s) => { s.values['dr.gn'] = 5.5; s.values['dr.bd'] = 3; s.values['am.vc'] = 2; s.values['dl.mx'] = 3.5; s.active.dl = true; s.active.rv = true; })],
         ['Ambient', make((s) => { s.active.dr = false; s.values['am.vc'] = 0; s.values['dl.mx'] = 5; s.values['rv.dc'] = 7; s.values['rv.mx'] = 5; s.active.dl = true; s.active.rv = true; s.order = ['gt', 'am', 'ch', 'dl', 'rv']; })],
-        // A starting point for a Dimebag-style sound: the EQ sits in front of the amp, tight lows, a push at 800 Hz.
+        // A starting point for a Dimebag-style sound: the graphic EQ sits in front of the amp: tight lows, a dip at 400 Hz, a push at 800 Hz.
         ['Pantera', make((s) => {
           s.active.rv = false; s.order = ['gt', 'eq', 'am']; Object.assign(s.values, {
-            'gt.th': 6, 'eq.lc': 90, 'eq.lf': 120, 'eq.lg': -3, 'eq.f1': 300, 'eq.g1': -3, 'eq.q1': 1,
-            'eq.f2': 800, 'eq.g2': 6, 'eq.q2': 1.2, 'eq.hf': 4000, 'eq.hg': 2, 'eq.hc': 12000, 'eq.lv': -3,
+            'gt.th': 6, 'eq.b1': -6, 'eq.b2': -3, 'eq.b3': -3, 'eq.b4': 6, 'eq.b5': 2, 'eq.b6': 2, 'eq.lv': -3,
             'am.vc': 2, 'am.cb': 2, 'am.bs': 4, 'am.md': 6, 'am.tr': 6 });
         })]
       ];
@@ -887,37 +884,28 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
   const labelUp = (s) => esc(String(s).toUpperCase());
 
 
-  // ---------- parametric EQ: vertical faders + a live response curve ----------
-  // A presentation rule only: the amp still reports 13 ordinary knobs (PROTOCOL.md). When a unit "eq" carries
-  // exactly the controls below, the page lays them out as faders; any other firmware gets the plain knobs.
-  const EQ_BANDS = [['lg', 'LOW'], ['g1', 'LO-MID'], ['g2', 'HI-MID'], ['hg', 'HIGH'], ['lv', 'LEVEL']];
-  const EQ_ROWS = [['lc', 'LOW CUT', 1], ['lf', 'LOW HZ', 1], ['f1', 'LO-MID HZ', 1], ['q1', 'LO-MID Q', 0],
-                   ['f2', 'HI-MID HZ', 1], ['q2', 'HI-MID Q', 0], ['hf', 'HIGH HZ', 1], ['hc', 'HIGH CUT', 1]];
-  const isEq = (u) => u.id === 'eq' && EQ_BANDS.concat(EQ_ROWS).every((b) => u.params.some((p) => p.key === 'eq.' + b[0] && p.kind === 'k'));
+  // ---------- 6-band EQ: vertical faders + a live response curve ----------
+  // A presentation rule only: the amp reports ordinary faders (PROTOCOL.md). When a unit "eq" carries exactly the
+  // controls below, the page lays them out as six band faders and a Level fader; any other firmware gets plain controls.
+  const EQ_BANDS = [['b1', '100', 100], ['b2', '200', 200], ['b3', '400', 400], ['b4', '800', 800], ['b5', '1.6K', 1600], ['b6', '3.2K', 3200], ['lv', 'LEVEL', 0]];
+  const EQ_Q = 1.4;
+  const isEq = (u) => u.id === 'eq' && EQ_BANDS.every((b) => u.params.some((p) => p.key === 'eq.' + b[0] && (p.kind === 'k' || p.kind === 'f')));
   const eqParam = (k) => model.param('eq.' + k);
   const eqVal = (k) => { const p = eqParam(k); const v = model.values['eq.' + k]; return v === undefined ? (p ? p.def : 0) : v; };
-  const hzText = (v) => (v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(Math.round(v)));
-  const dbText = (v) => { const r = Math.round(v * 10) / 10; return Math.abs(r) < 0.1 ? '0' : (r > 0 ? '+' : '−') + Math.abs(r); };
-  // text for any control; the EQ gets real units, everything else is the model's own text
+  const dbText = (v) => { const r = Math.round(v * 10) / 10; return Math.abs(r) < 0.1 ? '0' : (r > 0 ? '+' : '\u2212') + Math.abs(r); };
+  // text for any control; the EQ shows signed dB, everything else is the model's own text
   function disp(p) {
     const v = model.values[p.key];
     if (v === undefined || !p.key.startsWith('eq.')) return model.display(p);
-    const id = p.key.slice(3);
-    if (id === 'lc') return v < 21 ? 'OFF' : hzText(v);
-    if (id === 'hc') return v > 11800 ? 'OFF' : hzText(v);
-    if (id === 'lf' || id === 'f1' || id === 'f2' || id === 'hf') return hzText(v);
-    if (id === 'q1' || id === 'q2') return v.toFixed(1);
     return dbText(v);
   }
-  // Hz controls are heard in octaves, so their sliders are logarithmic.
-  const hzToPos = (p, v) => Math.round(1000 * Math.log(Math.max(v, p.min) / p.min) / Math.log(p.max / p.min));
-  const posToHz = (p, x) => Math.round(p.min * Math.pow(p.max / p.min, x / 1000));
   function summaryOf(u) {
     if (!isEq(u)) return model.summary(u);
-    const parts = [['lg', 'LO'], ['g1', 'LM'], ['g2', 'HM'], ['hg', 'HI']].filter((b) => Math.abs(eqVal(b[0])) >= 0.1).map((b) => b[1] + ' ' + dbText(eqVal(b[0])));
-    return parts.length ? parts.join(' · ') : 'FLAT';
+    const parts = EQ_BANDS.slice(0, 6).filter((b) => Math.abs(eqVal(b[0])) >= 0.1).sort((a, c) => Math.abs(eqVal(c[0])) - Math.abs(eqVal(a[0]))).slice(0, 2)
+      .map((b) => b[1] + ' ' + dbText(eqVal(b[0])));
+    return parts.length ? parts.join(' \u00b7 ') : 'FLAT';
   }
-  // Response of the six filter stages, the same maths the amp uses (RBJ biquads), summed in dB.
+  // Response of the six bell filters, the same maths the amp uses (RBJ peaking), summed in dB, plus Level.
   function eqResponse(f) {
     const w = 2 * Math.PI * f / 44100;
     const mag = (b0, b1, b2, a0, a1, a2) => {
@@ -926,25 +914,15 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
       const dr = a0 + a1 * c1 + a2 * c2, di = -(a1 * s1 + a2 * s2);
       return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
     };
-    const stage = (type, hz, db, q) => {
-      const w0 = 2 * Math.PI * hz / 44100, c = Math.cos(w0), s = Math.sin(w0), A = Math.pow(10, db / 40);
-      if (type === 'hp') { const a = s / (2 * q); return mag((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + a, -2 * c, 1 - a); }
-      if (type === 'lp') { const a = s / (2 * q); return mag((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + a, -2 * c, 1 - a); }
-      if (type === 'pk') { const a = s / (2 * q); return mag(1 + a * A, -2 * c, 1 - a * A, 1 + a / A, -2 * c, 1 - a / A); }
-      const a = s / 2 * Math.SQRT2, t = 2 * Math.sqrt(A) * a;
-      if (type === 'ls') return mag(A * ((A + 1) - (A - 1) * c + t), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - t), (A + 1) + (A - 1) * c + t, -2 * ((A - 1) + (A + 1) * c), (A + 1) + (A - 1) * c - t);
-      return mag(A * ((A + 1) + (A - 1) * c + t), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - t), (A + 1) - (A - 1) * c + t, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - t);
+    const bell = (hz, db, q) => {
+      const w0 = 2 * Math.PI * hz / 44100, c = Math.cos(w0), a = Math.sin(w0) / (2 * q), A = Math.pow(10, db / 40);
+      return mag(1 + a * A, -2 * c, 1 - a * A, 1 + a / A, -2 * c, 1 - a / A);
     };
     let db = eqVal('lv');
-    if (eqVal('lc') >= 21) db += stage('hp', eqVal('lc'), 0, 0.707);
-    if (Math.abs(eqVal('lg')) >= 0.1) db += stage('ls', eqVal('lf'), eqVal('lg'), 1);
-    if (Math.abs(eqVal('g1')) >= 0.1) db += stage('pk', eqVal('f1'), eqVal('g1'), eqVal('q1'));
-    if (Math.abs(eqVal('g2')) >= 0.1) db += stage('pk', eqVal('f2'), eqVal('g2'), eqVal('q2'));
-    if (Math.abs(eqVal('hg')) >= 0.1) db += stage('hs', eqVal('hf'), eqVal('hg'), 1);
-    if (eqVal('hc') <= 11800) db += stage('lp', eqVal('hc'), 0, 0.707);
+    EQ_BANDS.slice(0, 6).forEach((b) => { if (Math.abs(eqVal(b[0])) >= 0.1) db += bell(b[2], eqVal(b[0]), EQ_Q); });
     return db;
   }
-  const CW = 320, CH = 84, CRANGE = 18;
+  const CW = 320, CH = 84, CRANGE = 24;
   function eqCurvePath() {
     let d = '';
     for (let i = 0; i <= 96; i++) {
@@ -956,14 +934,14 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
   }
   const fx = (f) => (CW * Math.log(f / 20) / Math.log(1000)).toFixed(1);
   function eqCurveHTML() {
-    const grid = [[0, 0], [12, 1], [-12, 1]].map((g) => `<line x1="0" x2="${CW}" y1="${CH / 2 - g[0] * CH / 2 / CRANGE}" y2="${CH / 2 - g[0] * CH / 2 / CRANGE}" stroke="${g[1] ? '#2a2c31' : '#4a4d54'}" stroke-width="1"${g[1] ? ' stroke-dasharray="3 4"' : ''}/>`).join('');
+    const grid = [[0, 0], [18, 1], [-18, 1]].map((g) => `<line x1="0" x2="${CW}" y1="${CH / 2 - g[0] * CH / 2 / CRANGE}" y2="${CH / 2 - g[0] * CH / 2 / CRANGE}" stroke="${g[1] ? '#2a2c31' : '#4a4d54'}" stroke-width="1"${g[1] ? ' stroke-dasharray="3 4"' : ''}/>`).join('');
     const ticks = [[100, '100'], [1000, '1k'], [10000, '10k']].map((t) => `<line x1="${fx(t[0])}" x2="${fx(t[0])}" y1="0" y2="${CH}" stroke="#2a2c31" stroke-width="1"/><text x="${+fx(t[0]) + 3}" y="${CH - 3}" fill="#6d7078" font-size="9" font-family="IBM Plex Mono,monospace">${t[1]}</text>`).join('');
     return `<svg class="eqcurve" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none" role="img" aria-label="EQ response curve">${grid}${ticks}<path class="eqline" d="${eqCurvePath()}" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
   }
   function drawEq() { const l = $('.eqline'); if (l) l.setAttribute('d', eqCurvePath()); }
   const VTHUMB = 30;
   // The amp holds a knob in 200 steps, so a dB fader moves on the amp's own grid (0.15 dB for +-15): what the page sends is exactly what comes back.
-  const vfStep = (p) => (p.max - p.min) / 200;
+  const vfStep = (p) => (p.kind === 'f' ? 1 : (p.max - p.min) / 200);
   const quantV = (p, v) => Number((Math.round(v / vfStep(p)) * vfStep(p)).toFixed(3));
   const vfFrac = (p, v) => P.clamp(((v === undefined ? p.def : v) - p.min) / (p.max - p.min), 0, 1);
   function vfApply(el, p, v) {
@@ -979,13 +957,8 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     const p = eqParam(k), v = model.values[p.key], f = vfFrac(p, v), f0 = vfFrac(p, 0);
     return `<div class="vcell" data-key="${attr(p.key)}"><span class="lcd">${esc(disp(p))}</span><div class="vf" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${attr(label + ' gain, dB')}" aria-valuemin="${p.min}" aria-valuemax="${p.max}" aria-valuenow="${v === undefined ? p.def : v}" aria-valuetext="${attr(disp(p) + ' dB')}"><span class="vtrack"><span class="vfill" style="bottom:${Math.min(f, f0) * 100}%;height:${Math.abs(f - f0) * 100}%"></span></span><span class="vzero"></span><span class="vthumb" style="bottom:calc((100% - ${VTHUMB}px) * ${f})"></span></div><span class="lab">${label}</span></div>`;
   }
-  function eqRow(k, label, isHz) {
-    const p = eqParam(k), v = model.values[p.key], val = v === undefined ? p.def : v, id = 'f-' + p.key.replace(/\W/g, '-');
-    const rng = isHz ? `min="0" max="1000" step="1" value="${hzToPos(p, val)}" data-log="1"` : `min="${p.min}" max="${p.max}" step="${stepOf(p)}" value="${val}"`;
-    return `<div class="frow eqrow" data-key="${attr(p.key)}"><label for="${id}">${label}</label><input id="${id}" class="fader" type="range" ${rng} data-act="fader"><span class="fval">${esc(disp(p))}</span></div>`;
-  }
   function eqBayHTML() {
-    return `<div class="bay eqbay">${eqCurveHTML()}<div class="vrow">${EQ_BANDS.map((b) => eqFader(b[0], b[1])).join('')}</div><div class="eqrows">${EQ_ROWS.map((r) => eqRow(r[0], r[1], r[2])).join('')}</div></div>`;
+    return `<div class="bay eqbay">${eqCurveHTML()}<div class="vrow">${EQ_BANDS.map((b) => eqFader(b[0], b[1])).join('')}</div></div>`;
   }
 
   // ---------- markup ----------
@@ -1070,8 +1043,9 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
         const k = $('.knob', cell); if (k) { k.setAttribute('aria-valuenow', v); k.setAttribute('aria-valuetext', model.display(p)); }
         const vf = $('.vf', cell); if (vf) vfApply(vf, p, v);
         const inp = $('input.fader', cell);
-        if (inp) { if (document.activeElement !== inp) inp.value = inp.dataset.log ? hzToPos(p, v) : v; const fv = $('.fval', cell); if (fv) fv.textContent = disp(p); }
+        if (inp) { if (document.activeElement !== inp) inp.value = v; const fv = $('.fval', cell); if (fv) fv.textContent = disp(p); }
       } else if (p.kind === 'f') {
+        const vf = $('.vf', cell); if (vf) { vfApply(vf, p, v); const l = $('.lcd', cell); if (l) l.textContent = disp(p); }
         const inp = $('input', cell); if (inp && document.activeElement !== inp) inp.value = v;
         const l = $('.fval', cell); if (l) l.textContent = model.display(p);
       } else if (p.kind === 's') {
@@ -1625,7 +1599,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     if (!p) return;
     ui.activeKey = key;
     touchKey(key);
-    const val = f.dataset.log ? posToHz(p, Number(f.value)) : Number(f.value);
+    const val = Number(f.value);
     model.values[key] = val;
     const l = $('.fval', f.closest('[data-key]')); if (l) l.textContent = disp(p);
     if (key.startsWith('eq.')) { drawEq(); const u = model.units.get('eq'), sec = $('.unit[data-uid="eq"] [data-read]'); if (u && sec) sec.textContent = summaryOf(u); }
