@@ -520,6 +520,12 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
           s.active.rv = false; s.order = ['gt', 'eq', 'am']; Object.assign(s.values, {
             'gt.th': 6, 'eq.b1': -6, 'eq.b2': -3, 'eq.b3': -3, 'eq.b4': 6, 'eq.b5': 2, 'eq.b6': 2, 'eq.lv': -3,
             'am.vc': 2, 'am.cb': 2, 'am.bs': 4, 'am.md': 6, 'am.tr': 6 });
+        })],
+        // A starting point for an Enter Sandman rhythm sound: Lead voicing, 4x12, Drive off, mid scoop on the EQ.
+        ['Sandman', make((s) => {
+          s.active.rv = false; s.order = ['gt', 'eq', 'am']; Object.assign(s.values, {
+            'gt.th': 6, 'eq.b1': 2, 'eq.b4': -12, 'eq.b6': 3,
+            'am.vc': 2, 'am.cb': 2, 'am.bs': 5, 'am.md': 5, 'am.tr': 6 });
         })]
       ];
       demo.forEach(([name, snap], i) => { this.names[i] = name; this.slots[i] = snap; });
