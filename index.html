@@ -169,6 +169,12 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
 .pitem.cur{background:#0f1012;border-color:var(--amber);color:var(--amber)}
 .pitem.cur .pn{color:var(--amber)}
 .pitem .pdot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 6px 1px rgba(255,176,32,.6)}
+.prowc{display:flex;gap:6px}
+.prowc .pitem{flex:1;width:auto;min-width:0}
+.pcyc{flex:none;width:52px;min-height:48px;display:flex;align-items:center;justify-content:center;border-radius:5px;background:#232427;border:1px solid #33353a}
+.pcyc .pcbox{position:relative;width:22px;height:22px;border-radius:4px;border:2px solid var(--mute)}
+.pcyc.on .pcbox{background:var(--amber);border-color:var(--amber)}
+.pcyc.on .pcbox::after{content:'';position:absolute;left:5px;top:1px;width:5px;height:11px;border:solid var(--amber-ink);border-width:0 3px 3px 0;transform:rotate(45deg)}
 .segb.danger{color:#ff9a8a}
 .segb.danger.arm{background:#5a1d17;color:#fff;border-color:#ff6b57}
 #pconfirm{min-height:18px}
@@ -253,7 +259,9 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     rename: (n, name) => 'N,' + n + ',' + cleanName(name),
     create: (name) => { const c = name ? cleanName(name) : ''; return c ? 'C,' + c : 'C'; },
     duplicate: () => 'D',
-    remove: (n) => 'X,' + n
+    remove: (n) => 'X,' + n,
+    // Does the amp's own button skip preset n? (firmware update 4d) 1 = skip it, 0 = it is in the button's cycle.
+    skip: (n, on) => 'B,' + n + ',' + (on ? 1 : 0)
   };
 
   // "1x12" is sent as ASCII, shown as "1×12".
@@ -300,7 +308,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
       this.order = [];
       this.values = {};
       this.active = {};
-      this.presets = { count: 0, current: 0, names: [], used: [] };
+      this.presets = { count: 0, current: 0, names: [], used: [], skip: [], cycle: false };
       this.ready = false;
     }
 
@@ -343,6 +351,8 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
 
     // ---- preset slots. A slot is used when the amp has sent a name for it ----
     isUsed(n) { return !!this.presets.used[n - 1]; }
+    // true when the amp's own button skips this preset. Only meaningful once the amp has sent a B line (presets.cycle).
+    isSkipped(n) { return !!this.presets.skip[n - 1]; }
     usedSlots() {
       const out = [];
       for (let n = 1; n <= this.presets.count; n++) if (this.isUsed(n)) out.push(n);
@@ -445,6 +455,16 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
           if (!(n >= 1)) return { type: 'ignored' };
           this.presets.names[n - 1] = '';
           this.presets.used[n - 1] = false;
+          this.presets.skip[n - 1] = false;
+          return { type: 'presets' };
+        }
+        case 'B': {
+          // The presets the amp's button skips, as a bit mask (bit 0 = preset 1). Old firmware never sends this line,
+          // which is how the page knows to hide the checkboxes.
+          const m = num(f[0]);
+          if (!(m >= 0)) return { type: 'ignored' };
+          for (let i = 0; i < 16; i++) this.presets.skip[i] = ((m >> i) & 1) === 1;
+          this.presets.cycle = true;
           return { type: 'presets' };
         }
         case 'Z':
@@ -510,6 +530,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
       this.canReorder = opts.reorder !== false;
       this.canEdit = opts.edit !== false;
       this.registry = REGISTRY;
+      this.skipMask = 0; // presets the box's button skips (bit 0 = preset 1)
       this.values = {};
       this.active = {};
       for (const u of this.registry) if (!this.isFixed(u)) this.active[u.id] = true;
@@ -561,6 +582,16 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     pedalIds() { return this.registry.filter((u) => !this.isFixed(u)).map((u) => u.id); }
     usedSlots() { const o = []; this.slots.forEach((s, i) => { if (s) o.push(i + 1); }); return o; }
     freeSlot() { const i = this.slots.findIndex((s) => !s); return i < 0 ? 0 : i + 1; }
+    usedBits() { return this.usedSlots().reduce((a, k) => a | (1 << (k - 1)), 0); }
+    // drop the flags of empty slots, and never leave the button with nothing to visit. true if the mask changed
+    fixCycle() {
+      const used = this.usedBits();
+      let m = this.skipMask & used;
+      if ((used & ~m) === 0) m = 0;
+      const changed = m !== this.skipMask;
+      this.skipMask = m;
+      return changed;
+    }
     restore(n) {
       const s = this.slots[n - 1];
       Object.assign(this.values, s.values);
@@ -622,7 +653,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
       // names go between Q and O, only for slots that hold a preset
       const names = [];
       this.slots.forEach((slot, i) => { if (slot) names.push('N,' + (i + 1) + ',' + this.names[i]); });
-      return out.concat([state[0]], names, state.slice(1));
+      return out.concat([state[0]], names, ['B,' + this.skipMask], state.slice(1));
     }
 
     // Takes one line from the page, returns the lines the amp would send back.
@@ -702,6 +733,17 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
           const name = P.cleanName(base.slice(0, 10).trim() + ' 2');
           return this.put(n, name);
         }
+        case 'B': {
+          const n = Number(f[0]);
+          if (!(n >= 1 && n <= SLOTS)) return ['E,B,range'];
+          if (!this.slots[n - 1]) return ['E,B,unknown'];
+          if (f[1] !== '0' && f[1] !== '1') return ['E,B,syntax'];
+          const bit = 1 << (n - 1);
+          const m = f[1] === '1' ? this.skipMask | bit : this.skipMask & ~bit;
+          if ((this.usedBits() & ~m) === 0) return ['E,B,last'];
+          this.skipMask = m;
+          return ['B,' + m];
+        }
         case 'X': {
           const n = Number(f[0]);
           if (!(n >= 1 && n <= SLOTS)) return ['E,X,range'];
@@ -712,6 +754,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
           this.slots[n - 1] = null;
           this.names[n - 1] = '';
           out.push('X,' + n);
+          if (this.fixCycle()) out.push('B,' + this.skipMask);
           if (wasCurrent) {
             // fall back to the next preset that is left, wrapping around
             const used = this.usedSlots();
@@ -1326,6 +1369,8 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     } else if (ev.cmd === 'X' && ev.reason === 'last') {
       ui.pendingDel = null;
       toast("That's the only preset, so it can't be deleted");
+    } else if (ev.cmd === 'B') {
+      toast(ev.reason === 'last' ? "The amp's button needs at least one preset to visit" : 'The amp rejected that change');
     } else {
       toast('Amp said no: ' + ev.cmd + ' (' + ev.reason + ')');
     }
@@ -1448,7 +1493,7 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     } else if (ui.sheet === 'setup') {
       el.innerHTML = `<div class="scrim" data-act="closeSheet"></div><div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"><div class="shead"><span id="sheetTitle">SETUP</span><button class="lbtn" data-act="closeSheet">CLOSE</button></div><div class="sbody"><p class="shint">Set these once. They apply to every preset and the amp remembers them. The main screen only has the Volume slider.</p>${setupRows()}</div></div>`;
     } else if (ui.sheet === 'presets') {
-      el.innerHTML = `<div class="scrim" data-act="closeSheet"></div><div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"><div class="shead"><span id="sheetTitle">PRESETS</span><button class="lbtn" data-act="closeSheet">CLOSE</button></div><div class="sbody"><label class="nfield"><span class="lab">NAME</span><input id="pname" type="text" maxlength="12" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" aria-describedby="pnhint"></label><p class="shint" id="pnhint">Letters, numbers, space, _ and - · 12 characters</p><div id="plist"></div><p class="shint" id="pcount"></p><div class="seg tools"><button class="segb" id="bNew" data-act="newPreset" aria-label="New preset from scratch">NEW</button><button class="segb" id="bDup" data-act="dupPreset" aria-label="Duplicate this sound as a new preset">DUPLICATE</button><button class="segb danger" id="bDel" data-act="delPreset">DELETE</button></div><p class="shint" id="pconfirm" role="status" aria-live="polite"></p></div></div>`;
+      el.innerHTML = `<div class="scrim" data-act="closeSheet"></div><div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"><div class="shead"><span id="sheetTitle">PRESETS</span><button class="lbtn" data-act="closeSheet">CLOSE</button></div><div class="sbody"><label class="nfield"><span class="lab">NAME</span><input id="pname" type="text" maxlength="12" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" aria-describedby="pnhint"></label><p class="shint" id="pnhint">Letters, numbers, space, _ and - · 12 characters</p><div id="plist"></div><p class="shint" id="pcount"></p><p class="shint" id="pcychint" hidden>The tick box on the right: the amp's own button steps through ticked presets only. Untick the ones it should skip. The arrows on this page still reach every preset.</p><div class="seg tools"><button class="segb" id="bNew" data-act="newPreset" aria-label="New preset from scratch">NEW</button><button class="segb" id="bDup" data-act="dupPreset" aria-label="Duplicate this sound as a new preset">DUPLICATE</button><button class="segb danger" id="bDel" data-act="delPreset">DELETE</button></div><p class="shint" id="pconfirm" role="status" aria-live="polite"></p></div></div>`;
       updateSheet();
     }
   }
@@ -1456,11 +1501,17 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
     if (ui.sheet !== 'presets' || !$('#plist')) return;
     const cur = model.presets.current;
     const used = model.usedSlots();
-    $('#plist').innerHTML = used.map((n) => `<button class="pitem${n === cur ? ' cur' : ''}" data-act="loadSlot" data-n="${n}" aria-current="${n === cur}"><span class="pn">${String(n).padStart(2, '0')}</span><span class="pnm">${esc(model.presetName(n))}</span>${n === cur ? '<span class="pdot" aria-hidden="true"></span>' : ''}</button>`).join('');
+    $('#plist').innerHTML = used.map((n) => {
+      const row = `<button class="pitem${n === cur ? ' cur' : ''}" data-act="loadSlot" data-n="${n}" aria-current="${n === cur}"><span class="pn">${String(n).padStart(2, '0')}</span><span class="pnm">${esc(model.presetName(n))}</span>${n === cur ? '<span class="pdot" aria-hidden="true"></span>' : ''}</button>`;
+      if (!model.presets.cycle) return row; // older firmware: no button cycle list
+      const on = !model.isSkipped(n);
+      return `<div class="prowc">${row}<button class="pcyc${on ? ' on' : ''}" data-act="toggleCycle" data-n="${n}" role="switch" aria-checked="${on}" aria-label="${attr('Amp button visits ' + model.presetName(n))}"><span class="pcbox" aria-hidden="true"></span></button></div>`;
+    }).join('');
     const inp = $('#pname');
     if (inp && document.activeElement !== inp) inp.value = model.presets.names[cur - 1] || '';
     const free = model.presets.count - used.length;
     $('#pcount').textContent = used.length + ' of ' + model.presets.count + ' slots used' + (ui.dirty ? ' · the current sound has unsaved changes' : '');
+    $('#pcychint').hidden = !model.presets.cycle;
     $('#bNew').disabled = !free;
     $('#bDup').disabled = !free;
     const del = $('#bDel');
@@ -1708,6 +1759,11 @@ input.fader::-moz-range-thumb{width:24px;height:34px;border-radius:5px;border:1p
         const n = Number(el.dataset.n);
         if (n && n !== model.presets.current) sendNow(P.fmt.load(n));
         closeSheet();
+        break;
+      }
+      case 'toggleCycle': {
+        const n = Number(el.dataset.n);
+        if (n) sendNow(P.fmt.skip(n, !model.isSkipped(n))); // the amp answers with the new list
         break;
       }
       case 'newPreset': ui.focusName = true; sendNow(P.fmt.create()); break;
